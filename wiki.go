@@ -2,12 +2,12 @@ package main
 
 import (
 	// "fmt"
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"regexp"
-	"errors"
 )
 
 // Define the structure of a page
@@ -60,11 +60,7 @@ The function then loads the page data, formats the page with a string of simple 
 // 	p, _ := loadPage(title)
 // 	fmt.Fprintf(w, "<h1>%s</h1><div>%s</div>", p.Title, p.Body)
 // }
-func viewHandler(w http.ResponseWriter, r *http.Request) {
-	title, err := getTitle(w, r)
-	if err != nil {
-		return
-	}
+func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := loadPage(title)
 	if err != nil {
 		http.Redirect(w, r, "/edit/"+title, http.StatusFound)
@@ -89,11 +85,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 //			"</form>",
 //			p.Title, p.Title, p.Body)
 //	}
-func editHandler(w http.ResponseWriter, r *http.Request) {
-	title, err := getTitle(w, r)
-	if err != nil {
-		return
-	}
+func editHandler(w http.ResponseWriter, r *http.Request, title string) {
 	p, err := loadPage(title)
 	if err != nil {
 		p = &Page{Title: title}
@@ -101,14 +93,10 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, "edit", p)
 }
 
-func saveHandler(w http.ResponseWriter, r *http.Request) {
-    title, err := getTitle(w, r)
-    if err != nil {
-        return
-    }
+func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
     body := r.FormValue("body")
     p := &Page{Title: title, Body: []byte(body)}
-    err = p.save()
+    err := p.save()
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
         return
@@ -116,9 +104,20 @@ func saveHandler(w http.ResponseWriter, r *http.Request) {
     http.Redirect(w, r, "/view/"+title, http.StatusFound)
 }
 
+func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		m := validPath.FindStringSubmatch(r.URL.Path)
+		if m == nil {
+			http.NotFound(w, r)
+			return
+		}
+		fn(w, r, m[2])
+	}
+}
+
 /*
-	regexp.MustCompile will parse and compile the regular expression, and return a regexp.Regexp. 
-	MustCompile is distinct from Compile in that it will panic if the expression compilation fails, while Compile returns an error as a second parameter
+regexp.MustCompile will parse and compile the regular expression, and return a regexp.Regexp.
+MustCompile is distinct from Compile in that it will panic if the expression compilation fails, while Compile returns an error as a second parameter
 */
 var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 
@@ -136,8 +135,8 @@ func main() {
 	// p1.save()
 	// p2, _ := loadPage("TestPage")
 	// fmt.Println(string(p2.Body))
-	http.HandleFunc("/view/", viewHandler) // Move to http://localhost:8080/view/test (where test is the name of the file we want to print)
-	http.HandleFunc("/edit/", editHandler)
-	http.HandleFunc("/save/", saveHandler)
+	http.HandleFunc("/view/", makeHandler(viewHandler)) // Move to http://localhost:8080/view/test (where test is the name of the file we want to print)
+	http.HandleFunc("/edit/", makeHandler(editHandler))
+	http.HandleFunc("/save/", makeHandler(saveHandler))
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
